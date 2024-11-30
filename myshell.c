@@ -11,6 +11,17 @@
 
 #define PROMPT "\033[1;36m" "msh> " "\033[0m"
 #define SIZE 1024 // Tamaño buffer de stdin
+#define JOB_RUNNING 0
+#define JOB_STOPPED 1
+
+typedef struct job{
+    pid_t pid;
+    char *command;
+    int status;
+    int job_id;
+    int is_bg;
+    struct job *next;
+} job_t;
 
 static int      check_internal_commands(tline* line);
 static int      execute_exit();
@@ -23,14 +34,72 @@ static void     read_command(char** buffer, tline** line);
 static char*    read_line(FILE* archivo);
 static void     manage_fd(tline* line, int n);
 static void     execute_commands(tline* line);
+static job_t    *jobs_list = NULL;
+static int      next_job_id = 1;
 
+static void sigint_handler(int sign) {
+    (void)sign;
+    printf("\n" PROMPT);
+    fflush(stdout);
+}
+static void sigtstp_handler(int sign) {
+    (void)sign;
+    if (jobs_list != NULL) {
+        job_t *current = jobs_list;
+        if (!current->is_bg) {
+            kill(current->pid, SIGTSTP);
+            update_job_status(current->pid, JOB_STOPPED);
+            printf("\nProceso %d detenido.\n", current->pid);
+        }
+    }
+    printf("\n" PROMPT);
+    fflush(stdout);
+}
+static void check_background_jobs() {
+    int status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+        job_t *job = jobs_list;
+        while (job != NULL) {
+            if (job->pid == pid) {
+                if (WIFSTOPPED(status)){
+                    job->status = JOB_STOPPED;
+                    printf("\n[%d]+ Stopped\t%s\n", job->job_id, job->command);
+                } else if (WIFEXITED(status) || WIFSIGNALED(status)){
+                    printf("\n[%d]+ Done\t%s\n", job->job_id, job->command);
+                    remove_job(pid);
+                }
+                break;
+            }
+            job = job->next;
+        }
+    }
+}
 
 int main(){
     tline*  line;
     char*   buffer;
+    struct sigaction sa;
+
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("Error al configurar SIGINT");
+        exit(1);
+    }
+
+    sa.sa_handler = sigtstp_handler;
+    if (sigaction(SIGTSTP, &sa, NULL) == -1) {
+        perror("Error al configurar SIGTSTP");
+        exit(1);
+    }
+
+    
 
     while (1)
     {
+        check_background_jobs();
         print_prompt();
         read_command(&buffer, &line);
         execute_commands(line);
@@ -44,7 +113,9 @@ static int     check_internal_commands(tline* line){
     if (strcmp(line->commands[0].argv[0], "cd") == 0)
         return execute_cd(line);
     if (strcmp(line->commands[0].argv[0], "jobs") == 0)
-        return execute_jobs(line);
+        return execute_jobs();
+    if (strcmp(line->commands[0].argv[0], "bg") == 0)
+    return execute_bg(line);
     /*if (strcmp(line->commands[0].argv[0], "fg") == 0)
         return execute_fg();    
     if (strcmp(line->commands[0].argv[0], "umask") == 0)
@@ -55,6 +126,22 @@ static int     check_internal_commands(tline* line){
 
 static int     execute_exit(){ // Como parametro los procesos en segundo plano
     // Matar procesos restantes
+
+    job_t *current = jobs_list;
+    if (current != NULL) {
+        printf("Se están ejecutando procesos en segundo plano. \n");
+        while (current != NULL) {
+            printf("[%d] %d %s\n",
+                current->job_id,
+                current->pid,
+                current->command);
+            current = current->next;
+        }
+        return 1;
+    }
+
+    cleanup_jobs();
+    
     exit(0);
     return 1; 
 }
@@ -80,9 +167,88 @@ static int     execute_cd(tline* line){
         return 1; // Salir de la función exitosamente ejecutando cd
 }
 
-static int     execute_jobs(){
+static char *create_command_string(tline *line) {
+    char buffer[4096] = "";
+    int offset = 0;
+    
+    for (int i = 0; i < line->ncommands; i++) {
+        for (int j = 0; j < line->commands[i].argc; j++) {
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                             "%s ", line->commands[i].argv[j]);
+        }
+        if (i < line->ncommands - 1) {
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset, "| ");
+        }
+    }
+    if (line->background) {
+        strcat(buffer, "&");
+    }
+    return strdup(buffer);
+}
 
-    return 1;
+static void add_job(pid_t pid, tline *line) {
+    job_t *new_job = malloc(sizeof(job_t));
+    if (!new_job) {
+        perror("malloc");
+        return;
+    }
+    
+    new_job->pid = pid;
+    new_job->command = create_command_string(line);
+    new_job->status = JOB_RUNNING;
+    new_job->job_id = next_job_id++;
+    new_job->is_bg = line->background;
+    new_job->next = jobs_list;
+    jobs_list = new_job;
+}
+
+static void remove_job(pid_t pid) {
+    job_t *current = jobs_list;
+    job_t *prev = NULL;
+    
+    while (current != NULL) {
+        if (current->pid == pid) {
+            if (prev == NULL) {
+                jobs_list = current->next;
+            } else {
+                prev->next = current->next;
+            }
+            free(current->command);
+            free(current);
+            return;
+        }
+        prev = current;
+        current = current->next;
+    }
+}
+
+static void cleanup_jobs(void) {
+    while (jobs_list != NULL) {
+        job_t *temp = jobs_list;
+        jobs_list = jobs_list->next;
+        free(temp->command);
+        free(temp);
+    }
+}
+
+static int execute_jobs(void) {
+    job_t *current = jobs_list;
+    char status_char;
+    
+    while (current != NULL) {
+        // '+' para el trabajo más reciente, '-' para el anterior, ' ' para el resto
+        status_char = (current == jobs_list) ? '+' : 
+                     (current->next == jobs_list) ? '-' : ' ';
+        
+        printf("[%d]%c %s %s\n",
+            current->job_id,
+            status_char,
+            (current->status == JOB_RUNNING) ? "Running" : "Stopped",
+            current->command);
+        
+        current = current->next;
+    }
+    return 0;
 }
 
 static void print_prompt() {
@@ -237,6 +403,14 @@ static void     execute_commands(tline* line){
             if (i < line->ncommands - 1) {
                 close(pipefd[1]);  // Cerramos el extremo de escritura del pipe en el padre
                 last_pipe = pipefd[0];  // Guardamos el extremo de lectura para el próximo comando
+            }
+
+            if (line->background && i == line->ncommands - 1) {
+                add_job(pid, line);
+                printf("[%d] %d\n", next_job_id - 1, pid);
+            } else if (!line->background) {
+                int status;
+                waitpid(pid, &status, 0);
             }
         }
         // Nos han devuelto -1 ha habido error en el fork
