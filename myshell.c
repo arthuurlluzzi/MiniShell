@@ -36,6 +36,10 @@ static void     manage_fd(tline* line, int n);
 static void     execute_commands(tline* line);
 static job_t    *jobs_list = NULL;
 static int      next_job_id = 1;
+static void     update_job_status(pid_t pid, int status);
+static void     remove_job(pid_t pid);
+static void     cleanup_jobs(void);
+static int      execute_bg(tline* line);
 
 static void sigint_handler(int sign) {
     (void)sign;
