@@ -41,6 +41,7 @@ static void     remove_job(pid_t pid);
 static void     cleanup_jobs(void);
 static int      execute_bg(tline* line);
 
+
 static void sigint_handler(int sign) {
     (void)sign;
     printf("\n" PROMPT);
@@ -252,6 +253,56 @@ static int execute_jobs(void) {
         
         current = current->next;
     }
+    return 0;
+}
+
+static void update_job_status(pid_t pid, int status) {
+    job_t *job = jobs_list;
+    while (job != NULL) {
+        if (job->pid == pid) {
+            job->status = status;
+            return;
+        }
+        job = job->next;
+    }
+}
+
+static int execute_bg(tline *line) {
+    job_t *job = NULL;
+    int job_id;
+
+    if (line->commands[0].argc == 1) {
+        job_t *current = jobs_list;
+        while (current != NULL) {
+            if (current->status == JOB_STOPPED) {
+                job = current;
+            }
+            current = current->next;
+        }
+    } else if (line->commands[0].argc == 2) {
+        job_id = atoi(line->commands[0].argv[1]);
+        job_t *current = jobs_list;
+        while (current != NULL) {
+            if (current->job_id == job_id && current->status == JOB_STOPPED) {
+                job = current;
+                break;
+            }
+            current = current->next;
+        }
+    } else {
+        fprintf(stderr, "bg: uso incorrecto\n");
+        return -1;
+    }
+
+    if (job == NULL) {
+        fprintf(stderr, "bg: no hay trabajos detenidos\n");
+        return -1;
+    }
+
+    job->status = JOB_RUNNING;
+    kill(job->pid, SIGCONT);
+    printf("[%d]+ %s &\n", job->job_id, job->command);
+
     return 0;
 }
 
