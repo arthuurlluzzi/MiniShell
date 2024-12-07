@@ -27,8 +27,8 @@ static int      check_internal_commands(tline* line);
 static int      execute_exit();
 static int      execute_cd(tline* line);
 static int      execute_jobs();
-/* static int   execute_fg();
-static int      execute_umask(); */
+/* static int   execute_fg(); */
+static int      execute_umask(tline* line);
 static void     print_prompt();
 static void     read_command(char** buffer, tline** line);
 static char*    read_line(FILE* archivo);
@@ -79,6 +79,44 @@ static void check_background_jobs() {
             job = job->next;
         }
     }
+}
+
+static int execute_umask(tline* line) {
+    mode_t mask;
+
+    // Pipes?
+    if (line->commands > 1) {
+        fprintf(stderr, "umask no se puede ejecutar con pipes.\n");
+        return -1;
+    }
+
+    // +1 argumento?
+    if (line->commands[0].argc > 2) {
+        fprintf(stderr, "demasiados argumentos.\n")
+        return -1;
+    }
+
+    // =1 argumento?
+    if (line->commands[0].argc == 2 {
+        char *endptr;
+        // convertir a octal
+        mask = (mode_t)strtol(line->commands[0].argv[1], &endptr, 8);
+        // octal valido?
+        if (*endptr != '\0') {
+            fprintf(stderr, "numero octal no valido.\n");
+            return -1;
+        }
+        umask(mask);
+    }
+        
+    // sin argumentos, mostrar máscara actual
+    else {
+        mask = umask(0);  // máscara actual
+        umask(mask);      // restaurar
+        printf("%04o\n", mask);
+    }
+    
+    return 0;
 }
 
 int main(){
