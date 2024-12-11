@@ -107,7 +107,7 @@ static int execute_umask(tline* line) {
             return 1;
         }
         umask(mask);
-        return 1
+        return 1;
     }
         
     // sin argumentos, mostrar máscara actual
