@@ -85,19 +85,19 @@ static int execute_umask(tline* line) {
     mode_t mask;
 
     // Pipes?
-    if (line->commands > 1) {
+    if (line->ncommands > 1) {
         fprintf(stderr, "umask no se puede ejecutar con pipes.\n");
         return -1;
     }
 
     // +1 argumento?
     if (line->commands[0].argc > 2) {
-        fprintf(stderr, "demasiados argumentos.\n")
+        fprintf(stderr, "demasiados argumentos.\n");
         return -1;
     }
 
     // =1 argumento?
-    if (line->commands[0].argc == 2 {
+    if (line->commands[0].argc == 2) {
         char *endptr;
         // convertir a octal
         mask = (mode_t)strtol(line->commands[0].argv[1], &endptr, 8);
@@ -160,9 +160,9 @@ static int     check_internal_commands(tline* line){
     if (strcmp(line->commands[0].argv[0], "bg") == 0)
     return execute_bg(line);
     /*if (strcmp(line->commands[0].argv[0], "fg") == 0)
-        return execute_fg();    
+        return execute_fg();   */ 
     if (strcmp(line->commands[0].argv[0], "umask") == 0)
-        return execute_umask(); */
+        return execute_umask(line);
     
     return 0;
 }
