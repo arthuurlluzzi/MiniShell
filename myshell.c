@@ -87,26 +87,27 @@ static int execute_umask(tline* line) {
     // Pipes?
     if (line->ncommands > 1) {
         fprintf(stderr, "umask no se puede ejecutar con pipes.\n");
-        return -1;
+        return 1;
     }
 
     // +1 argumento?
     if (line->commands[0].argc > 2) {
         fprintf(stderr, "demasiados argumentos.\n");
-        return -1;
+        return 1;
     }
 
     // =1 argumento?
     if (line->commands[0].argc == 2) {
-        char *endptr;
+        char*endptr;
         // convertir a octal
         mask = (mode_t)strtol(line->commands[0].argv[1], &endptr, 8);
         // octal valido?
         if (*endptr != '\0') {
             fprintf(stderr, "numero octal no valido.\n");
-            return -1;
+            return 1;
         }
         umask(mask);
+        return 1
     }
         
     // sin argumentos, mostrar máscara actual
@@ -116,7 +117,7 @@ static int execute_umask(tline* line) {
         printf("%04o\n", mask);
     }
     
-    return 0;
+    return 1;
 }
 
 int main(){
@@ -415,7 +416,19 @@ static void     execute_commands(tline* line){
 
     if (!(line -> ncommands > 0))
         return;
-    
+
+    // Verificar primero si es un comando interno
+    if (line->ncommands == 1) {
+        if (strcmp(line->commands[0].argv[0], "umask") == 0 ||
+            strcmp(line->commands[0].argv[0], "cd") == 0 ||
+            strcmp(line->commands[0].argv[0], "exit") == 0 ||
+            strcmp(line->commands[0].argv[0], "jobs") == 0 ||
+            strcmp(line->commands[0].argv[0], "bg") == 0) {
+            check_internal_commands(line);
+            return;
+        }
+    }
+
     i = 0;
     if (check_internal_commands(line) == 1) {
         // Si es el único comando, no hace falta continuar
