@@ -277,12 +277,23 @@ static void cleanup_jobs(void) {
 
 static int execute_jobs(void) {
     job_t *current = jobs_list;
+    job_t *mostRecent = jobs_list;
+    job_t *last = NULL;
     char status_char;
+
+    if (mostRecent != NULL && mostRecent->next != NULL) {
+        last = mostRecent->next;
+    }
     
     while (current != NULL) {
         // '+' para el trabajo más reciente, '-' para el anterior, ' ' para el resto
-        status_char = (current == jobs_list) ? '+' : 
-                     (current->next == jobs_list) ? '-' : ' ';
+           if (current == mostReciente) {
+            status_char = '+';  // El más reciente
+        } else if (current == penultimo) {
+            status_char = '-';  // El penúltimo
+        } else {
+            status_char = ' ';  // El resto
+        }
         
         printf("[%d]%c %s %s\n",
             current->job_id,
@@ -457,6 +468,13 @@ static void     execute_commands(tline* line){
 
         // El pid == 0 avisa al proceso hijo que el es el hijo
         if (pid == 0) {
+
+            if (line->is_bg) {
+                signal(SIGINT, SIG_IGN);
+                signal(SIGTSTP, SIG_IGN)}
+            } else {
+                signal(SIGINT, SIG_DFL);
+                signal(SIGTSTP, SIG_DFL);
             // Si no es el primer comando, redirigir la entrada estándar al pipe anterior
             if (last_pipe != -1) {
                 if (dup2(last_pipe, STDIN_FILENO) == -1) {
