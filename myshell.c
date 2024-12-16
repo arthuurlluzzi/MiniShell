@@ -102,9 +102,18 @@ static void sigint_handler(int sign) {
 
 static void sigtstp_handler(int sign) {
     (void)sign;
-
+    
     if (foreground_pid > 0) {
-        kill(foreground_pid, SIGTSTP);  // Enviar SIGTSTP al proceso en primer plano
+        kill(foreground_pid, SIGTSTP);
+        job_t *job = jobs_list;
+        while (job != NULL) {
+            if (job->pid == foreground_pid) {
+                job->status = JOB_STOPPED;
+                printf("\n[%d]+ Stopped\t%s\n", job->job_id, job->command);
+                break;
+            }
+            job = job->next;
+        }
         printf("\n");
     } else {
         printf("\n" PROMPT);
@@ -122,6 +131,9 @@ static void check_background_jobs() {
                 if (WIFEXITED(status) || WIFSIGNALED(status)) {
                     printf("\n[%d]+ Done\t%s\n", job->job_id, job->command);
                     remove_job(pid);
+                } else if (WIFSTOPPED(status)) {
+                    update_job_status(pid, JOB_STOPPED);
+                    printf("\n[%d]+ Stopped\t%s\n", job->job_id, job->command);
                 }
                 break;
             }
@@ -409,7 +421,7 @@ static void update_job_status(pid_t pid, int status) {
     while (job != NULL) {
         if (job->pid == pid) {
             job->status = status;
-            return;
+            break;
         }
         job = job->next;
     }
@@ -568,32 +580,29 @@ static void     execute_commands(tline* line){
                 printf("[%d] %d\n", job->job_id, pid);
             } 
             else if (!line->background) {
-                foreground_pid = pid;  // Guarda el PID del proceso en primer plano
-                int status;
+              foreground_pid = pid;
+              int status;
+              waitpid(pid, &status, WUNTRACED);
+              foreground_pid = -1;
 
-                // Espera al proceso en primer plano
-                waitpid(pid, &status, WUNTRACED);
-                foreground_pid = -1; // Restablece foreground_pid después de waitpid
-
-                if (WIFSTOPPED(status)) {
-                    // Si el proceso fue detenido, actualiza su estado
-                    update_job_status(pid, JOB_STOPPED);
-                    job_t *job = jobs_list;
-                    while (job && job->pid != pid) {
-                        job = job->next;
-                    }
-                    if (job) {
-                        printf("[%d]+ Stopped\t%s\n", job->job_id, job->command);
-                    } else {
-                        // Si el trabajo no está en la lista, agrégalo como detenido
-                        add_job(pid, line);
-                        printf("[%d]+ Stopped\t%s\n", get_available_id() - 1, line->commands[i].argv[0]);
-                    }
-                } else if (WIFEXITED(status) || WIFSIGNALED(status)) {
-                    // Si el proceso terminó, elimínalo de la lista de trabajos
-                    remove_job(pid);
-                }
-            }
+              if (WIFSTOPPED(status)) {
+                  job_t *job = jobs_list;
+                  while (job && job->pid != pid) {
+                      job = job->next;
+                  }
+                  if (job) {
+                      job->status = JOB_STOPPED;
+                      printf("[%d]+ Stopped\t%s\n", job->job_id, job->command);
+                  } else {
+                      add_job(pid, line);
+                      job_t *new_job = jobs_list;
+                      new_job->status = JOB_STOPPED;
+                      printf("[%d]+ Stopped\t%s\n", new_job->job_id, new_job->command);
+                  }
+              } else if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                  remove_job(pid);
+              }
+          }
 
 
     // Cierre de pipes
