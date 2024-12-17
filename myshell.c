@@ -335,9 +335,10 @@ static void remove_job(pid_t pid) {
 
 static int execute_bg(tline *line) {
     job_t *job = NULL;
-    int job_id;
+    pid_t pid;
 
     if (line->commands[0].argc == 1) {
+        // Sin argumentos - buscar el último trabajo detenido
         job_t *current = jobs_list;
         while (current != NULL && !job) {
             if (current->status == JOB_STOPPED) {
@@ -346,10 +347,11 @@ static int execute_bg(tline *line) {
             current = current->next;
         }
     } else if (line->commands[0].argc == 2) {
-        job_id = atoi(line->commands[0].argv[1]);
+        // Con argumento - buscar por PID
+        pid = (pid_t)atoi(line->commands[0].argv[1]);
         job_t *current = jobs_list;
         while (current != NULL) {
-            if (current->job_id == job_id && current->status == JOB_STOPPED) {
+            if (current->pid == pid && current->status == JOB_STOPPED) {
                 job = current;
                 break;
             }
@@ -361,13 +363,13 @@ static int execute_bg(tline *line) {
     }
 
     if (job == NULL) {
-        fprintf(stderr, "bg: no hay trabajos detenidos\n");
+        fprintf(stderr, "bg: no hay trabajos detenidos con ese PID\n");
         return 1;
     }
 
     job->status = JOB_RUNNING;
     kill(job->pid, SIGCONT);
-    printf("[%d]+ %s\n", job->job_id, job->command);
+    printf("[%d]+ %s &\n", job->job_id, job->command);
 
     return 1;
 }
