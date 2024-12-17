@@ -107,7 +107,19 @@ static void sigtstp_handler(int sign) {
 
     if (foreground_pid > 0) {
         kill(foreground_pid, SIGTSTP);  // Enviar SIGTSTP al proceso en primer plano
-        printf("\n");
+        
+        // Buscar el job correspondiente al PID
+        job_t *job = jobs_list;
+        while (job && job->pid != foreground_pid) {
+            job = job->next;
+        }
+        
+        if (job) {
+            printf("El proceso \n[%d]+ se ha detenido y enviado a segundo plano\t%s\n", job->job_id, job->command);
+        } else {
+            // Si el job no existe en la lista, se creará en execute_commands
+            printf("\nEl proceso %d se ha detenido.\n", foreground_pid);
+        }
     } else {
         printf("\n");
         print_prompt();
